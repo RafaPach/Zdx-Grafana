@@ -1,0 +1,9 @@
+{
+  "SomeSettingKey": "Hello from Zdx plugin!",
+  "EnableFeatureX": true,
+  "ClientId": "102q5p0t0hng6dp",
+  "ClientSecret": "b1j4EfKzSrcjqDSBwV0lIeyFGGnlPrxPRykLLLVUvi8Jk",
+  "TokenUrl": "https://cpu.zslogin.net/oauth2/v1/token",
+  "ZdxApiBaseUrl": "https://api.zsapi.net/zdx/v1",
+  "Audience": "https://api.zscaler.com"
+}

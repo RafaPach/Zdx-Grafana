@@ -1,0 +1,7 @@
+{
+  "name": "NOCAPI.Modules.Zdx",
+  "version": "1.0.0",
+  "description": "Zscaler ZDX integration plugin",
+  "author": "Rafael Pacheco",
+  "assembly": "NOCAPI.Modules.Zdx.dll"
+}
