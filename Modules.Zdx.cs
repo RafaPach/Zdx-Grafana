@@ -464,7 +464,9 @@ namespace NOCAPI.Modules.Zdx
                 await _rateLimiter.WaitTurnAsync();
                 _logger.LogInformation("Prometheus scrape hit.");
 
-                if (_cachedMetrics == "# No data yet")
+                var metrics = ZdxBackgroundService.CachedMetrics;
+
+                if (metrics == "# No data yet")
                 {
                     return Content("# No ZDX metrics yet, waiting for background refresh.", "text/plain");
                 }

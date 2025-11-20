@@ -49,7 +49,7 @@ namespace NOCAPI.Modules.Zdx
                         });
 
                 // If you want metrics background refresh:
-                // services.AddHostedService<ZdxMetricsBackgroundService>();
+                services.AddHostedService<ZdxBackgroundService>();
 
                 // Build container
                 ServiceProvider = services.BuildServiceProvider();
