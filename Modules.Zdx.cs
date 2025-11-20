@@ -84,12 +84,14 @@ namespace NOCAPI.Modules.Zdx
         public ZdxController(ILogger<ZdxController> logger)
         {
             _logger = logger;
+
             ZdxServiceInitializer.Initialize();
 
             _pocMethods = ZdxServiceInitializer.ServiceProvider.GetRequiredService<PocHelper>();
             _rateLimiter = ZdxServiceInitializer.ServiceProvider.GetRequiredService<RateLimiter>();
             _tokenService = ZdxServiceInitializer.ServiceProvider.GetRequiredService<TokenService>();
         }
+
 
         //[HttpGet("data")]
         //public async Task<IActionResult> GetAppOverview()
@@ -457,37 +459,23 @@ namespace NOCAPI.Modules.Zdx
         [HttpGet("testData")]
         public async Task<IActionResult> GetTest()
         {
-
-
             try
             {
+                await _rateLimiter.WaitTurnAsync();
                 _logger.LogInformation("Prometheus scrape hit.");
-
-                // Serve cached metrics immediately
 
                 if (_cachedMetrics == "# No data yet")
                 {
-                    _logger.LogInformation("First scrape detected, fetching initial metrics...");
-                    await RefreshMetricsAsync();
+                    return Content("# No ZDX metrics yet, waiting for background refresh.", "text/plain");
                 }
 
-                var metrics = _cachedMetrics;
-
-
-                // Trigger background refresh if stale
-                if (DateTime.UtcNow - _lastRefresh > RefreshInterval)
-                {
-                    _ = Task.Run(async () => await RefreshMetricsAsync());
-                }
-
-                return Content(metrics, "text/plain; version=0.0.4");
+                return Content(_cachedMetrics, "text/plain; version=0.0.4");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching ZDX metrics.");
                 return StatusCode(500, "Failed to fetch metrics.");
             }
-
         }
 
     }

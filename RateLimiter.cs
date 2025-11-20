@@ -91,43 +91,90 @@ namespace NOCAPI.Modules.Zdx
     //        await _minuteLimiter.WaitAsync();
     //    }
 
-    public class RateLimiter
+    //public class RateLimiter
+    //{
+    //    private readonly SemaphoreSlim _secondLimiter = new SemaphoreSlim(5, 5);
+    //    private readonly SemaphoreSlim _minuteLimiter = new SemaphoreSlim(30, 30);
+
+    //    public RateLimiter()
+    //    {
+    //        // Refill every second
+    //        var secondTimer = new Timer(_ =>
+    //        {
+    //            var toRelease = 5 - _secondLimiter.CurrentCount;
+    //            if (toRelease > 0)
+    //            {
+    //                _secondLimiter.Release(toRelease);
+    //                Console.WriteLine($"[RateLimiter] Refilled {toRelease} tokens for second bucket. Current: {_secondLimiter.CurrentCount}");
+    //            }
+    //        }, null, 1000, 1000);
+
+    //        // Refill every minute
+    //        var minuteTimer = new Timer(_ =>
+    //        {
+    //            var toRelease = 30 - _minuteLimiter.CurrentCount;
+    //            if (toRelease > 0)
+    //            {
+    //                _minuteLimiter.Release(toRelease);
+    //                Console.WriteLine($"[RateLimiter] Refilled {toRelease} tokens for minute bucket. Current: {_minuteLimiter.CurrentCount}");
+    //            }
+    //        }, null, 60000, 60000);
+    //    }
+
+    //    public async Task WaitTurnAsync()
+    //    {
+    //        Console.WriteLine($"[RateLimiter] Waiting for token... Second: {_secondLimiter.CurrentCount}, Minute: {_minuteLimiter.CurrentCount}");
+    //        await _secondLimiter.WaitAsync();
+    //        await _minuteLimiter.WaitAsync();
+    //        Console.WriteLine($"[RateLimiter] Token acquired. Remaining -> Second: {_secondLimiter.CurrentCount}, Minute: {_minuteLimiter.CurrentCount}");
+    //    }
+    //}
+    public class RateLimiter : IDisposable
     {
         private readonly SemaphoreSlim _secondLimiter = new SemaphoreSlim(5, 5);
         private readonly SemaphoreSlim _minuteLimiter = new SemaphoreSlim(30, 30);
 
-        public RateLimiter()
+        private readonly Timer _secondTimer;
+        private readonly Timer _minuteTimer;
+        private readonly ILogger<RateLimiter> _logger;
+
+        public RateLimiter(ILogger<RateLimiter> logger)
         {
+            _logger = logger;
+
             // Refill every second
-            var secondTimer = new Timer(_ =>
+            _secondTimer = new Timer(_ =>
             {
                 var toRelease = 5 - _secondLimiter.CurrentCount;
                 if (toRelease > 0)
                 {
                     _secondLimiter.Release(toRelease);
-                    Console.WriteLine($"[RateLimiter] Refilled {toRelease} tokens for second bucket. Current: {_secondLimiter.CurrentCount}");
                 }
             }, null, 1000, 1000);
 
             // Refill every minute
-            var minuteTimer = new Timer(_ =>
+            _minuteTimer = new Timer(_ =>
             {
                 var toRelease = 30 - _minuteLimiter.CurrentCount;
                 if (toRelease > 0)
                 {
                     _minuteLimiter.Release(toRelease);
-                    Console.WriteLine($"[RateLimiter] Refilled {toRelease} tokens for minute bucket. Current: {_minuteLimiter.CurrentCount}");
                 }
             }, null, 60000, 60000);
         }
 
         public async Task WaitTurnAsync()
         {
-            Console.WriteLine($"[RateLimiter] Waiting for token... Second: {_secondLimiter.CurrentCount}, Minute: {_minuteLimiter.CurrentCount}");
             await _secondLimiter.WaitAsync();
             await _minuteLimiter.WaitAsync();
-            Console.WriteLine($"[RateLimiter] Token acquired. Remaining -> Second: {_secondLimiter.CurrentCount}, Minute: {_minuteLimiter.CurrentCount}");
+        }
+
+        public void Dispose()
+        {
+            _secondTimer?.Dispose();
+            _minuteTimer?.Dispose();
         }
     }
+
 }
 

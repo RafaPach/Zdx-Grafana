@@ -31,35 +31,36 @@ namespace NOCAPI.Modules.Zdx
 
                 var services = new ServiceCollection();
 
+                // Core services
                 services.AddMemoryCache();
-
                 services.AddScoped<PocHelper>();
-
                 services.AddSingleton<TokenService>();
-
                 services.AddSingleton<RateLimiter>();
 
-                //services.AddHostedService<MetricsBackgroundService>();
+                // HTTP Client
+                services.AddHttpClient("Default")
+                    .ConfigurePrimaryHttpMessageHandler(() =>
+                        new HttpClientHandler
+                        {
+                            UseProxy = true,
+                            Proxy = WebRequest.GetSystemWebProxy(),
+                            ServerCertificateCustomValidationCallback =
+                                HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+                        });
 
-                //services.AddHostedService<MetricsBS>();
+                // If you want metrics background refresh:
+                // services.AddHostedService<ZdxMetricsBackgroundService>();
 
-                services.AddHttpClient("Default").ConfigurePrimaryHttpMessageHandler(() =>
-                new HttpClientHandler
-                {
-                    UseProxy = true,
-                    Proxy = WebRequest.GetSystemWebProxy(),
-                    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-                });
-
+                // Build container
                 ServiceProvider = services.BuildServiceProvider();
 
-
-                var hostedServices = ServiceProvider.GetServices<IHostedService>();
-                foreach (var hostedService in hostedServices)
+                // Start hosted services (ONLY because you do not have Program.cs)
+                foreach (var hosted in ServiceProvider.GetServices<IHostedService>())
                 {
-                    hostedService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+                    hosted.StartAsync(CancellationToken.None)
+                          .GetAwaiter()
+                          .GetResult();
                 }
-
 
                 _initialized = true;
             }
