@@ -118,81 +118,6 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             }
         }
 
-        //private async Task RefreshGaMetricsAsync(CancellationToken token)
-        //{
-        //    _logger.LogInformation("Refreshing GA metrics...");
-
-        //    //var accessToken = await _tokenService.GetAccessTokenAsync();
-
-        //    var accessToken= await _gaTokenService.GetAccessTokenAsync();
-
-        //    Console.WriteLine($"AccessToken{accessToken}");
-
-
-        //    var regionCache = new Dictionary<GAHelper.Region, GADto>();
-
-        //    GaInvestorCentreActiveUsers.Unpublish();
-        //    GaInvestorCentrePageViews.Unpublish();
-        //    GaIssuerOnlineActiveUsers.Unpublish();
-        //    GaIssuerOnlinePageViews.Unpublish();
-
-        //    foreach (GAHelper.Region region in Enum.GetValues(typeof(GAHelper.Region)))
-        //    {
-        //        var json = await _gaHelper.GetInvestorCentreMetricsAsync(
-        //        accessToken,
-        //        region,
-        //        15);
-
-        //        var model = JsonSerializer.Deserialize<GADto>(json);
-
-        //        lock (_cacheLock)
-        //        {
-        //            regionCache[region] = model;
-        //            CachedGaJson = json;
-        //        }
-
-
-        //        var rows = model.Rows;
-        //        if (rows == null || rows.Count == 0)
-        //        {
-
-        //            _logger.LogInformation("GA realtime returned no rows for {Region}.", region);
-        //            continue;
-
-        //        }
-
-        //        var regionLabel = region.ToString().ToLowerInvariant();
-
-
-        //            foreach (var row in rows)
-        //            {
-        //                var screen = row.DimensionValues[0].Value;
-
-        //                var activeUsers = int.Parse(row.MetricValues[0].Value);
-
-        //                var pageViews = int.Parse(row.MetricValues[1].Value);
-
-        //                GaInvestorCentreActiveUsers.WithLabels(regionLabel, screen).Set(activeUsers);
-        //                GaInvestorCentrePageViews.WithLabels(regionLabel, screen).Set(pageViews);
-
-        //                _logger.LogInformation("GA row: screen={Screen}, activeUsers={ActiveUsers}, pageViews={PageViews}",
-        //                    screen, activeUsers, pageViews);
-        //            }
-        //        }
-
-
-        //    // Export metrics to controller
-        //    using var stream = new MemoryStream();
-        //    await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
-        //    stream.Position = 0;
-
-        //    using var reader = new StreamReader(stream);
-        //    CachedMetrics = reader.ReadToEnd();
-
-        //    _logger.LogInformation("GA metrics updated.");
-        //}
-
-
         private async Task RefreshGaMetricsAsync(CancellationToken token)
         {
             _logger.LogInformation("Refreshing GA metrics...");
@@ -368,42 +293,6 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     _logger.LogWarning(ex, "Snapshot IC GA request failed for region {Region}", region);
                 }
 
-
-                // --- IssuerOnline Snapshots ---
-                try
-                {
-                    var jsonSnapshotIo = await _gaSnapshots.GetIssuerOnlineSnapshotMetricsAsync(accessToken, region, 15);
-                    var modelSnapshotIo = JsonSerializer.Deserialize<GADto>(jsonSnapshotIo);
-
-                    var rowsSnapIo = modelSnapshotIo?.Rows;
-                    if (rowsSnapIo == null || rowsSnapIo.Count == 0)
-                    {
-                        _logger.LogInformation("GA snapshot (IssuerOnline) returned no rows for {Region}.", region);
-                    }
-                    else
-                    {
-                        var regionLabel = region.ToString().ToUpperInvariant();
-
-                        foreach (var row in rowsSnapIo)
-                        {
-                            var screen = row.DimensionValues[0].Value;
-                            var activeUsers = int.Parse(row.MetricValues[0].Value);
-                            var pageViews = int.Parse(row.MetricValues[1].Value);
-
-                            // Reuse existing gauges
-                            GaIssuerOnlineDailyActiveUsers.WithLabels(regionLabel, screen).Set(activeUsers);
-                            GaIssuerOnlineDailyPageViews.WithLabels(regionLabel, screen).Set(pageViews);
-
-                            _logger.LogInformation(
-                                "IO Snapshot row: screen={Screen}, activeUsers={ActiveUsers}, pageViews={PageViews}",
-                                screen, activeUsers, pageViews);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Snapshot IO GA request failed for region {Region}", region);
-                }
             }
 
 
