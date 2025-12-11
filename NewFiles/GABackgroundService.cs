@@ -257,44 +257,48 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     _logger.LogWarning(ex, "Sphere GA request failed for region {Region}", region);
                 }
 
-                // --- InvestorCentre Snapshots ---
-                try
+                var snapshotRegions = new[] { GAHelper.Region.EMEA, GAHelper.Region.NA, GAHelper.Region.OCEANIA };
+
+                foreach(var regionsnap in snapshotRegions)
                 {
-                    var jsonSnapshotIc = await _gaSnapshots.GetInvestorCentreSnapshotMetricsAsync(accessToken, region, 15);
-                    var modelSnapshotIc = JsonSerializer.Deserialize<GADto>(jsonSnapshotIc);
-
-                    var rowsSnapIc = modelSnapshotIc?.Rows;
-                    if (rowsSnapIc == null || rowsSnapIc.Count == 0)
+                    try
                     {
-                        _logger.LogInformation("GA snapshot (InvestorCentre) returned no rows for {Region}.", region);
-                    }
-                    else
-                    {
-                        var regionLabel = region.ToString().ToUpperInvariant();
+                        var jsonSnapshotIc = await _gaSnapshots.GetInvestorCentreSnapshotMetricsAsync(accessToken, regionsnap, 15);
+                        var modelSnapshotIc = JsonSerializer.Deserialize<GADto>(jsonSnapshotIc);
 
-                        foreach (var row in rowsSnapIc)
+                        var rowsSnapIc = modelSnapshotIc?.Rows;
+                        if (rowsSnapIc == null || rowsSnapIc.Count == 0)
                         {
-                            var screen = row.DimensionValues[0].Value;
-                            var activeUsers = int.Parse(row.MetricValues[0].Value);
-                            var pageViews = int.Parse(row.MetricValues[1].Value);
+                            _logger.LogInformation("GA snapshot (InvestorCentre) returned no rows for {Region}.", region);
+                        }
+                        else
+                        {
+                            var regionLabel = region.ToString().ToUpperInvariant();
 
-                            // Reuse your existing gauges
-                            GaInvestorCentreDailyActiveUsers.WithLabels(regionLabel, screen).Set(activeUsers);
-                            GaInvestorCentreDailyPageViews.WithLabels(regionLabel, screen).Set(pageViews);
+                            foreach (var row in rowsSnapIc)
+                            {
+                                var screen = row.DimensionValues[0].Value;
+                                var activeUsers = int.Parse(row.MetricValues[0].Value);
+                                var pageViews = int.Parse(row.MetricValues[1].Value);
 
-                            _logger.LogInformation(
-                                "IC Snapshot row: screen={Screen}, activeUsers={ActiveUsers}, pageViews={PageViews}",
-                                screen, activeUsers, pageViews);
+                                // Reuse your existing gauges
+                                GaInvestorCentreDailyActiveUsers.WithLabels(regionLabel, screen).Set(activeUsers);
+                                GaInvestorCentreDailyPageViews.WithLabels(regionLabel, screen).Set(pageViews);
+
+                                _logger.LogInformation(
+                                    "IC Snapshot row: screen={Screen}, activeUsers={ActiveUsers}, pageViews={PageViews}",
+                                    screen, activeUsers, pageViews);
+                            }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Snapshot IC GA request failed for region {Region}", region);
+                    }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Snapshot IC GA request failed for region {Region}", region);
-                }
+
 
             }
-
 
             // Export metrics to controller
             using var stream = new MemoryStream();
