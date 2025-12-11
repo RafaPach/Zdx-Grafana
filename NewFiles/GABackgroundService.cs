@@ -17,6 +17,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
         private readonly GAHelper _gaHelper;
         private readonly TokenService _tokenService;
         private readonly GATokenService _gaTokenService;
+        private readonly GASnapshots _gaSnapshots;
 
         public static string CachedMetrics = "# No GA data yet";
 
@@ -66,17 +67,36 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             new GaugeConfiguration { LabelNames = new[] { "region", "screen" } });
 
 
+        public static readonly Gauge GaInvestorCentreDailyActiveUsers =
+    Metrics.CreateGauge("ga_investorcentre_daily_active_users", "Daily snapshot active users",
+    new GaugeConfiguration { LabelNames = new[] { "region", "screen" } });
+
+        public static readonly Gauge GaInvestorCentreDailyPageViews =
+            Metrics.CreateGauge("ga_investorcentre_daily_pageviews", "Daily snapshot pageviews",
+            new GaugeConfiguration { LabelNames = new[] { "region", "screen" } });
+
+        public static readonly Gauge GaIssuerOnlineDailyActiveUsers =
+            Metrics.CreateGauge("ga_issueronline_daily_active_users", "Daily snapshot active users",
+            new GaugeConfiguration { LabelNames = new[] { "region", "screen" } });
+
+        public static readonly Gauge GaIssuerOnlineDailyPageViews =
+            Metrics.CreateGauge("ga_issueronline_daily_pageviews", "Daily snapshot pageviews",
+            new GaugeConfiguration { LabelNames = new[] { "region", "screen" } });
+
+
 
         public GABackgroundService(
             ILogger<GABackgroundService> logger,
             GAHelper gaHelper,
             TokenService tokenService,
-            GATokenService gATokenService)
+            GATokenService gATokenService,
+            GASnapshots gaSnapshots)
         {
             _logger = logger;
             _gaHelper = gaHelper;
             _tokenService = tokenService;
             _gaTokenService = gATokenService;
+            _gaSnapshots = gaSnapshots;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -264,6 +284,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 {
                     _logger.LogDebug(ex, "IssuerOnline not configured for region {Region}", region);
                 }
+
                 catch (HttpRequestException ex)
                 {
                     _logger.LogWarning(ex, "IssuerOnline GA request failed for region {Region}", region);
@@ -305,9 +326,83 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 {
                     _logger.LogDebug(ex, "Sphere not configured for region {Region}", region);
                 }
+
                 catch (HttpRequestException ex)
                 {
                     _logger.LogWarning(ex, "Sphere GA request failed for region {Region}", region);
+                }
+
+                // --- InvestorCentre Snapshots ---
+                try
+                {
+                    var jsonSnapshotIc = await _gaSnapshots.GetInvestorCentreSnapshotMetricsAsync(accessToken, region, 15);
+                    var modelSnapshotIc = JsonSerializer.Deserialize<GADto>(jsonSnapshotIc);
+
+                    var rowsSnapIc = modelSnapshotIc?.Rows;
+                    if (rowsSnapIc == null || rowsSnapIc.Count == 0)
+                    {
+                        _logger.LogInformation("GA snapshot (InvestorCentre) returned no rows for {Region}.", region);
+                    }
+                    else
+                    {
+                        var regionLabel = region.ToString().ToUpperInvariant();
+
+                        foreach (var row in rowsSnapIc)
+                        {
+                            var screen = row.DimensionValues[0].Value;
+                            var activeUsers = int.Parse(row.MetricValues[0].Value);
+                            var pageViews = int.Parse(row.MetricValues[1].Value);
+
+                            // Reuse your existing gauges
+                            GaInvestorCentreDailyActiveUsers.WithLabels(regionLabel, screen).Set(activeUsers);
+                            GaInvestorCentreDailyPageViews.WithLabels(regionLabel, screen).Set(pageViews);
+
+                            _logger.LogInformation(
+                                "IC Snapshot row: screen={Screen}, activeUsers={ActiveUsers}, pageViews={PageViews}",
+                                screen, activeUsers, pageViews);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Snapshot IC GA request failed for region {Region}", region);
+                }
+
+
+                // --- IssuerOnline Snapshots ---
+                try
+                {
+                    var jsonSnapshotIo = await _gaSnapshots.GetIssuerOnlineSnapshotMetricsAsync(accessToken, region, 15);
+                    var modelSnapshotIo = JsonSerializer.Deserialize<GADto>(jsonSnapshotIo);
+
+                    var rowsSnapIo = modelSnapshotIo?.Rows;
+                    if (rowsSnapIo == null || rowsSnapIo.Count == 0)
+                    {
+                        _logger.LogInformation("GA snapshot (IssuerOnline) returned no rows for {Region}.", region);
+                    }
+                    else
+                    {
+                        var regionLabel = region.ToString().ToUpperInvariant();
+
+                        foreach (var row in rowsSnapIo)
+                        {
+                            var screen = row.DimensionValues[0].Value;
+                            var activeUsers = int.Parse(row.MetricValues[0].Value);
+                            var pageViews = int.Parse(row.MetricValues[1].Value);
+
+                            // Reuse existing gauges
+                            GaIssuerOnlineDailyActiveUsers.WithLabels(regionLabel, screen).Set(activeUsers);
+                            GaIssuerOnlineDailyPageViews.WithLabels(regionLabel, screen).Set(pageViews);
+
+                            _logger.LogInformation(
+                                "IO Snapshot row: screen={Screen}, activeUsers={ActiveUsers}, pageViews={PageViews}",
+                                screen, activeUsers, pageViews);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Snapshot IO GA request failed for region {Region}", region);
                 }
             }
 
