@@ -208,7 +208,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     }
                     else
                     {
-                        var regionLabel = region.ToString().ToLowerInvariant();
+                        var regionLabel = region.ToString().ToUpperInvariant();
                         foreach (var row in rowsIc)
                         {
                             var screen = row.DimensionValues[0].Value;
@@ -244,7 +244,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     }
                     else
                     {
-                        var regionLabel = region.ToString().ToLowerInvariant();
+                        var regionLabel = region.ToString().ToUpperInvariant();
                         foreach (var row in rowsIo)
                         {
                             var screen = row.DimensionValues[0].Value;
@@ -285,7 +285,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     }
                     else
                     {
-                        var regionLabel = region.ToString().ToLowerInvariant();
+                        var regionLabel = region.ToString().ToUpperInvariant();
                         foreach (var row in rowsSp)
                         {
                             var screen = row.DimensionValues[0].Value;
