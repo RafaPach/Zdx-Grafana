@@ -89,6 +89,24 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             LabelNames = new[] { "region" }
         });
 
+        private static readonly Gauge GoogleAnalyticsICEmea = Metrics.CreateGauge(
+        "ga_ic_emea",
+        "Invester Centre EMEA actice users",
+          new GaugeConfiguration
+          {
+              LabelNames = new[] { "property", "screen" }
+          });
+
+
+        private static readonly Gauge GAICEMEAPageViews = Metrics.CreateGauge(
+            "ga_screen_page_views",
+            "GA4 realtime screen page views per screen (last 30 min window)",
+            new GaugeConfiguration
+            {
+                LabelNames = new[] { "property", "screen" }
+            });
+
+
         // ---- CACHED RESULTS ----
 
         private static readonly object _cacheLock = new();
@@ -103,6 +121,74 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             _logger = logger;
             _tokenService = tokenService;
             _pocMethods = pocMethods;
+        }
+
+        private static readonly Dictionary<string, double> RegionMapping = new()
+            {
+                { "Kenya", 1 },
+                { "Nigeria", 2 },
+                { "South Africa", 3 },
+                { "China", 4 },
+                { "Hong Kong", 5 },
+                { "India", 6 },
+                { "Pakistan", 7 },
+                { "Singapore", 8 },
+                { "Austria", 9 },
+                { "Belgium", 10 },
+                { "Denmark", 11 },
+                { "France", 12 },
+                { "Germany", 13 },
+                { "Ireland", 14 },
+                { "Italy", 15 },
+                { "Jersey", 16 },
+                { "Netherlands", 17 },
+                { "Norway", 18 },
+                { "Poland", 19 },
+                { "Slovakia", 20 },
+                { "Spain", 21 },
+                { "Sweden", 22 },
+                { "Switzerland", 23 },
+                { "United Kingdom", 24 },
+                { "Vatican City", 25 },
+                { "Canada", 26 },
+                { "Dominican Republic", 27 },
+                { "Mexico", 28 },
+                { "United States", 29 },
+                { "Australia", 30 },
+                { "New Zealand", 31 },
+                { "Brazil", 32 },
+                { "Colombia", 33 },
+                { "Unknown", 0 }
+            };
+
+        private static readonly HashSet<string> UsStates = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Alabama","Arizona","California","Colorado","Connecticut","Delaware",
+            "District of Columbia","Florida","Georgia","Illinois","Indiana","Iowa",
+            "Kentucky","Maine","Maryland","Massachusetts","Michigan","Minnesota",
+            "Mississippi","Missouri","Montana","Nebraska","New Hampshire","New Jersey",
+            "New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon",
+            "Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee",
+            "Texas","Utah","Virginia","Washington","West Virginia","Wisconsin","Wyoming"
+        };
+
+        private static readonly Dictionary<string, string> LastRegions = new();
+
+
+
+        // Convert region string to numeric
+        private static double RegionToNumeric(string region)
+        {
+            if (string.IsNullOrWhiteSpace(region))
+                return 0;
+
+            if (UsStates.Contains(region))
+                region = "United States";
+
+            if (RegionMapping.TryGetValue(region, out var value))
+                return value;
+
+            return 0;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -164,7 +250,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 ZdxAppTotalUsersByRegion.WithLabels(appIdStr, appName, region).Set(app.TotalUsers);
             }
 
-            foreach (var s in stats)
+            foreach (var stat in stats)
             {
                 var appIdStr = stat.AppId.ToString();
                 var appName = stat.AppName ?? "Unknown";
@@ -194,6 +280,12 @@ namespace NOCAPI.Modules.Zdx.NewFiles
 
             using var reader = new StreamReader(stream);
             CachedMetrics = reader.ReadToEnd();
+
+            //var stream = new MemoryStream();
+            //await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
+            //stream.Position = 0;
+            //using var reader = new StreamReader(stream);
+            //var metrics = await reader.ReadToEndAsync();
 
             _logger.LogInformation("ZDX metrics updated successfully.");
 

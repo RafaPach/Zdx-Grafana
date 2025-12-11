@@ -36,6 +36,12 @@ namespace NOCAPI.Modules.Zdx
                 services.AddScoped<PocHelper>();
                 services.AddSingleton<TokenService>();
                 services.AddSingleton<RateLimiter>();
+                services.AddScoped<GAHelper>();
+                services.AddSingleton<GATokenService>();
+
+                services.AddHostedService<ZdxBackgroundService>();
+                services.AddHostedService<GABackgroundService>();
+
 
                 // HTTP Client
                 services.AddHttpClient("Default")
@@ -49,8 +55,6 @@ namespace NOCAPI.Modules.Zdx
                         });
 
                 // If you want metrics background refresh:
-                services.AddHostedService<ZdxBackgroundService>();
-
                 // Build container
                 ServiceProvider = services.BuildServiceProvider();
 

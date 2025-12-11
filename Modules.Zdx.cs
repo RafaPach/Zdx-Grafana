@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NOCAPI.Modules.Zdx.NewFiles;
 using Prometheus;
 using System.Threading.RateLimiting;
 
@@ -16,12 +17,10 @@ namespace NOCAPI.Modules.Zdx
         private readonly ILogger<ZdxController> _logger;
         private readonly TokenService _tokenService;
         private readonly RateLimiter _rateLimiter;
-
+        private readonly GAHelper _gaHelper;
+        private readonly GATokenService _gaTokenService;
 
         private static readonly object _cacheLock = new();
-        private static string _cachedMetrics = "# No data yet";
-        private static DateTime _lastRefresh = DateTime.MinValue;
-        private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(5);
 
 
         private static readonly Gauge ZdxAppScore = Metrics.CreateGauge(
@@ -90,44 +89,9 @@ namespace NOCAPI.Modules.Zdx
             _pocMethods = ZdxServiceInitializer.ServiceProvider.GetRequiredService<PocHelper>();
             _rateLimiter = ZdxServiceInitializer.ServiceProvider.GetRequiredService<RateLimiter>();
             _tokenService = ZdxServiceInitializer.ServiceProvider.GetRequiredService<TokenService>();
+            _gaHelper = ZdxServiceInitializer.ServiceProvider.GetRequiredService<GAHelper>();
+            _gaTokenService = ZdxServiceInitializer.ServiceProvider.GetRequiredService<GATokenService>();
         }
-
-
-        //[HttpGet("data")]
-        //public async Task<IActionResult> GetAppOverview()
-        //{
-
-        //    Console.WriteLine("Plugin config path: " + Path.Combine(AppContext.BaseDirectory, "Plugins", "NOCAPI.Modules.Zdx", "config.json"));
-
-        //    try
-        //    {
-
-        //        //var token = PluginConfigWrapper.Get("Token");
-
-        //        var token = await _tokenService.GetAccessTokenAsync();
-        //        //_logger.LogInformation("Retrieved token: {token}", token ?? "null");
-
-        //        //var client = _pocMethods.CreateAuthClient(token);
-
-        //        //_logger.LogInformation("Fetching ZDX application overview with token: {token}", token);
-
-        //        var results = await _pocMethods.GetAppPoc(token);
-
-        //        Console.WriteLine($"Apps returned: {results?.Count ?? 0}");
-
-        //        if (results != null)
-        //        {
-        //            foreach (var app in results)
-        //                Console.WriteLine($"App: {app.AppId} - {app.AppName} - Region: {app.MostImpactedRegion}");
-        //        }
-        //        return Ok(results);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _logger.LogError(ex, "Error in GetAppOverview");
-        //        return StatusCode(500, $"Failed to fetch app overview: {ex.Message}");
-        //    }
-        //}
 
         private static readonly Dictionary<string, double> RegionMapping = new()
             {
@@ -197,119 +161,54 @@ namespace NOCAPI.Modules.Zdx
         }
 
 
-        private async Task RefreshMetricsAsync()
-        {
-            try
-            {
-                var token = await _tokenService.GetAccessTokenAsync();
-                await _rateLimiter.WaitTurnAsync();
-                var appsOverview = await _pocMethods.GetAppPoc(token);
-                var stats = await _pocMethods.GetStatsPerApp(token);
-
-                // Update Prometheus gauges
-                ZdxAppScore.Unpublish();
-                ZdxAppAvgPageFetchTimeSeconds.Unpublish();
-                ZdxAppTotalUsers.Unpublish();
-                ZdxIndividualAppStats.Unpublish();
-
-                foreach (var app in appsOverview)
-                {
-                    ZdxAppScore.WithLabels(app.AppId.ToString(), app.AppName).Set(app.Score);
-                    ZdxAppAvgPageFetchTimeSeconds.WithLabels(app.AppId.ToString(), app.AppName).Set(app.AvgPageFetchTime);
-                    ZdxAppTotalUsers.WithLabels(app.AppId.ToString(), app.AppName).Set(app.TotalUsers);
-                }
-
-                foreach (var stat in stats)
-                {
-                    ZdxIndividualAppStats.WithLabels(stat.AppId.ToString(), stat.AppName, "num_poor").Set(stat.NumPoor);
-                    ZdxIndividualAppStats.WithLabels(stat.AppId.ToString(), stat.AppName, "num_okay").Set(stat.NumOkay);
-                    ZdxIndividualAppStats.WithLabels(stat.AppId.ToString(), stat.AppName, "num_good").Set(stat.NumGood);
-                }
-
-                // Export metrics to cache
-                var stream = new MemoryStream();
-                await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
-                stream.Position = 0;
-                using var reader = new StreamReader(stream);
-                var metrics = await reader.ReadToEndAsync();
-
-                lock (_cacheLock)
-                {
-                    _cachedMetrics = metrics;
-                    _lastRefresh = DateTime.UtcNow;
-                }
-
-                _logger.LogInformation("Metrics refreshed successfully.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error refreshing metrics.");
-            }
-        }
-
-        //[HttpGet("appOverview")]
-        //public async Task<IActionResult> GetPrometheusMetrics()
+        //private async Task RefreshMetricsAsync()
         //{
         //    try
         //    {
-        //        //var token = PluginConfigWrapper.Get("Token");
         //        var token = await _tokenService.GetAccessTokenAsync();
-        //        var apps = await _pocMethods.GetAppPoc(token);
+        //        await _rateLimiter.WaitTurnAsync();
+        //        var appsOverview = await _pocMethods.GetAppPoc(token);
+        //        var stats = await _pocMethods.GetStatsPerApp(token);
 
+        //        // Update Prometheus gauges
         //        ZdxAppScore.Unpublish();
         //        ZdxAppAvgPageFetchTimeSeconds.Unpublish();
         //        ZdxAppTotalUsers.Unpublish();
-        //        ZdxAppMostImpactedRegion.Unpublish();
+        //        ZdxIndividualAppStats.Unpublish();
 
-        //        var latestRegions = new Dictionary<string, string>();
-
-        //        //foreach (var app in apps)
-        //        //{
-        //        //    var appIdStr = app.AppId.ToString();
-        //        //    latestRegions[appIdStr] = app.MostImpactedRegion; // overwrite any previous region
-        //        //}
-
-        //        LastRegions.Clear();
-
-        //        foreach (var app in apps)
+        //        foreach (var app in appsOverview)
         //        {
-        //            var appIdStr = app.AppId.ToString();
-        //            var appName = app.AppName;
-        //            var region = app.MostImpactedRegion;
-        //            var numericValue = RegionToNumeric(region);
-
-        //            // Remove old region metric if region changed
-        //            if (LastRegions.TryGetValue(appIdStr, out var oldRegion) && oldRegion != region)
-        //            {
-        //                ZdxAppMostImpactedRegion.RemoveLabelled(appIdStr, appName, oldRegion);
-        //            }
-
-        //            ZdxAppScore.WithLabels(appIdStr, appName).Set(app.Score);
-        //            ZdxAppAvgPageFetchTimeSeconds.WithLabels(appIdStr, appName).Set(app.AvgPageFetchTime);
-        //            ZdxAppTotalUsers.WithLabels(appIdStr, appName).Set(app.TotalUsers);
-
-        //            //ZdxAppMostImpactedRegion.WithLabels(appIdStr, appName, region).Set(RegionToNumeric(region));
-        //            ZdxAppMostImpactedRegion.WithLabels(appIdStr, appName, region).Set(numericValue);
-        //            ZdxAppTotalUsersByRegion.WithLabels(appIdStr, appName, region).Set(app.TotalUsers);
-
-        //            LastRegions[appIdStr] = region;
+        //            ZdxAppScore.WithLabels(app.AppId.ToString(), app.AppName).Set(app.Score);
+        //            ZdxAppAvgPageFetchTimeSeconds.WithLabels(app.AppId.ToString(), app.AppName).Set(app.AvgPageFetchTime);
+        //            ZdxAppTotalUsers.WithLabels(app.AppId.ToString(), app.AppName).Set(app.TotalUsers);
         //        }
 
+        //        foreach (var stat in stats)
+        //        {
+        //            ZdxIndividualAppStats.WithLabels(stat.AppId.ToString(), stat.AppName, "num_poor").Set(stat.NumPoor);
+        //            ZdxIndividualAppStats.WithLabels(stat.AppId.ToString(), stat.AppName, "num_okay").Set(stat.NumOkay);
+        //            ZdxIndividualAppStats.WithLabels(stat.AppId.ToString(), stat.AppName, "num_good").Set(stat.NumGood);
+        //        }
+
+        //        // Export metrics to cache
         //        var stream = new MemoryStream();
         //        await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
         //        stream.Position = 0;
-
         //        using var reader = new StreamReader(stream);
         //        var metrics = await reader.ReadToEndAsync();
 
-        //        return Content(metrics, "text/plain; version=0.0.4");
+        //        lock (_cacheLock)
+        //        {
+        //            _cachedMetrics = metrics;
+        //            _lastRefresh = DateTime.UtcNow;
+        //        }
+
+        //        _logger.LogInformation("Metrics refreshed successfully.");
         //    }
         //    catch (Exception ex)
         //    {
-        //        _logger.LogError(ex, "Error in ExportMetrics");
-        //        return StatusCode(500, "Failed to export metrics.");
+        //        _logger.LogError(ex, "Error refreshing metrics.");
         //    }
-
         //}
 
         [HttpGet("centralisedData")]
@@ -336,142 +235,50 @@ namespace NOCAPI.Modules.Zdx
                 return StatusCode(500, "Failed to fetch metrics.");
             }
 
-            //        var token = await _tokenService.GetAccessTokenAsync();
+        }
+ 
+        [HttpGet("testData")]
+        public async Task<IActionResult> GetTest()
+        {
+            //try
+            //{
+            //    await _rateLimiter.WaitTurnAsync();
+            //    _logger.LogInformation("Prometheus scrape hit.");
 
-            //        var appsOverview = await _pocMethods.GetAppPoc(token);
-
-            //        var stats = await _pocMethods.GetStatsPerApp(token);
-
-            //        ZdxAppScore.Unpublish();
-            //        ZdxAppAvgPageFetchTimeSeconds.Unpublish();
-            //        ZdxAppTotalUsers.Unpublish();
-            //        ZdxAppMostImpactedRegion.Unpublish();
-            //        ZdxAppTotalUsersByRegion.Unpublish();
-            //        ZdxIndividualAppStats.Unpublish();
-
-            //        foreach (var app in appsOverview)
-            //        {
-            //            var appIdStr = app.AppId.ToString();
-            //            var appName = app.AppName;
-            //            var region = app.MostImpactedRegion;
-            //            var numericValue = RegionToNumeric(region);
-
-            //            if (LastRegions.TryGetValue(appIdStr, out var oldRegion) && oldRegion != region)
-            //            {
-            //                ZdxAppMostImpactedRegion.RemoveLabelled(appIdStr, appName, oldRegion);
-            //                ZdxAppTotalUsersByRegion.RemoveLabelled(appIdStr, appName, oldRegion);
-            //            }
-
-            //            ZdxAppScore.WithLabels(appIdStr, appName).Set(app.Score);
-            //            ZdxAppAvgPageFetchTimeSeconds.WithLabels(appIdStr, appName).Set(app.AvgPageFetchTime);
-            //            ZdxAppTotalUsers.WithLabels(appIdStr, appName).Set(app.TotalUsers);
-            //            ZdxAppMostImpactedRegion.WithLabels(appIdStr, appName, region).Set(numericValue);
-            //            ZdxAppTotalUsersByRegion.WithLabels(appIdStr, appName, region).Set(app.TotalUsers);
-
-            //            LastRegions[appIdStr] = region;
-            //        }
-
-            //        foreach (var stat in stats)
-            //        {
-            //            var appIdStr = stat.AppId.ToString();
-            //            var appName = stat.AppName ?? "Unknown";
-
-            //            ZdxIndividualAppStats.WithLabels(appIdStr, appName, "num_poor").Set(stat.NumPoor);
-            //            ZdxIndividualAppStats.WithLabels(appIdStr, appName, "num_okay").Set(stat.NumOkay);
-            //            ZdxIndividualAppStats.WithLabels(appIdStr, appName, "num_good").Set(stat.NumGood);
-            //            ZdxActiveDevicesPerApp.WithLabels(appIdStr, appName, "active_devices").Set(stat.ActiveDevices);
-            //        }
-
-            //        var stream = new MemoryStream();
-            //        await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
-            //        stream.Position = 0;
-            //        using var reader = new StreamReader(stream);
-            //        var metrics = await reader.ReadToEndAsync();
-
-            //        return Content(metrics, "text/plain; version=0.0.4");
-            //    }
-            //    catch (Exception ex)
-            //    {
-            //        _logger.LogError(ex, "Error in GetAllZdxMetrics");
-            //        return StatusCode(500, "Failed to fetch combined metrics.");
-            //    }
-
-
-            // FROM HEREEEEEEEEEEEE
-
-
-
-
-            //    var metrics = MetricsCache.Get();
+            //    var metrics = ZdxBackgroundService.CachedMetrics;
 
             //    if (metrics == "# No data yet")
             //    {
-            //        // First-time fetch
-            //        try
-            //        {
-            //            var token = await _tokenService.GetAccessTokenAsync();
-            //            var appsOverview = await _pocMethods.GetAppPoc(token);
-            //            var stats = await _pocMethods.GetStatsPerApp(token);
+            //        return Content("# No ZDX metrics yet, waiting for background refresh.", "text/plain");
+            //    }
 
-            //            ZdxAppScore.Unpublish();
-            //            ZdxAppAvgPageFetchTimeSeconds.Unpublish();
-            //            ZdxAppTotalUsers.Unpublish();
-            //            ZdxAppMostImpactedRegion.Unpublish();
-            //            ZdxAppTotalUsersByRegion.Unpublish();
-            //            ZdxIndividualAppStats.Unpublish();
+            //    return Content(metrics, "text/plain; version=0.0.4");
+            //}
+            //catch (Exception ex)
+            //{
+            //    _logger.LogError(ex, "Error fetching ZDX metrics.");
+            //    return StatusCode(500, "Failed to fetch metrics.");
+            //}
 
-            //            foreach (var app in appsOverview)
-            //            {
-            //                var appIdStr = app.AppId.ToString();
-            //                var appName = app.AppName;
-            //                var region = app.MostImpactedRegion;
-            //                var numericValue = RegionToNumeric(region);
-
-            //                ZdxAppScore.WithLabels(appIdStr, appName).Set(app.Score);
-            //                ZdxAppAvgPageFetchTimeSeconds.WithLabels(appIdStr, appName).Set(app.AvgPageFetchTime);
-            //                ZdxAppTotalUsers.WithLabels(appIdStr, appName).Set(app.TotalUsers);
-            //                ZdxAppMostImpactedRegion.WithLabels(appIdStr, appName, region).Set(numericValue);
-            //                ZdxAppTotalUsersByRegion.WithLabels(appIdStr, appName, region).Set(app.TotalUsers);
-            //            }
-
-            //            foreach (var stat in stats)
-            //            {
-            //                var appIdStr = stat.AppId.ToString();
-            //                var appName = stat.AppName ?? "Unknown";
-
-            //                ZdxIndividualAppStats.WithLabels(appIdStr, appName, "num_poor").Set(stat.NumPoor);
-            //                ZdxIndividualAppStats.WithLabels(appIdStr, appName, "num_okay").Set(stat.NumOkay);
-            //                ZdxIndividualAppStats.WithLabels(appIdStr, appName, "num_good").Set(stat.NumGood);
-            //                ZdxActiveDevicesPerApp.WithLabels(appIdStr, appName, "active_devices").Set(stat.ActiveDevices);
-            //            }
-
-            //            var stream = new MemoryStream();
-            //            await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
-            //            stream.Position = 0;
-            //            using var reader = new StreamReader(stream);
-            //            metrics = await reader.ReadToEndAsync();
-
-            //            MetricsCache.Update(metrics);
-
+            return StatusCode(200, "Ok");
         }
-        //}
 
-        [HttpGet("testData")]
-        public async Task<IActionResult> GetTest()
+        [HttpGet("gatest")]
+        public async Task<IActionResult> GATest()
         {
             try
             {
                 await _rateLimiter.WaitTurnAsync();
                 _logger.LogInformation("Prometheus scrape hit.");
 
-                var metrics = ZdxBackgroundService.CachedMetrics;
+                var metrics = GABackgroundService.CachedMetrics;
 
                 if (metrics == "# No data yet")
                 {
                     return Content("# No ZDX metrics yet, waiting for background refresh.", "text/plain");
                 }
 
-                return Content(_cachedMetrics, "text/plain; version=0.0.4");
+                return Content(metrics, "text/plain; version=0.0.4");
             }
             catch (Exception ex)
             {
@@ -479,6 +286,33 @@ namespace NOCAPI.Modules.Zdx
                 return StatusCode(500, "Failed to fetch metrics.");
             }
         }
+
+
+
+        [HttpGet("ga/test-once")]
+        public async Task<IActionResult> GaTestOnce([FromServices] GAHelper gaHelper)
+        {
+            try
+            {
+                var token = await _gaTokenService.GetAccessTokenAsync();
+                _logger.LogInformation("GA token acquired. Len={Len}, Prefix={Pref}",
+                    token?.Length ?? 0,
+                    token is { Length: > 10 } ? token[..10] : token ?? "<null>");
+
+                var json = await gaHelper.GetIssuerOnlineMetricsAsync(token, GAHelper.Region.NA, 10);
+                _logger.LogInformation("GA test-once JSON (first 500): {Json}",
+                    json is null ? "<null>" : json.Substring(0, Math.Min(500, json.Length)));
+
+                return Content(json ?? "null", "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GA test-once failed.");
+                // TEMP: bubble error text to the client so curl shows the reason
+                return StatusCode(500, $"GA test-once failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
 
     }
 }
