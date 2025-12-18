@@ -38,6 +38,7 @@ namespace NOCAPI.Modules.Zdx
                 services.AddSingleton<RateLimiter>();
                 services.AddScoped<GAHelper>();
                 services.AddSingleton<GATokenService>();
+                services.AddSingleton<GASnapshots>();
 
                 services.AddHostedService<ZdxBackgroundService>();
                 services.AddHostedService<GABackgroundService>();

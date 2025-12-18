@@ -17,6 +17,10 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             NA,
             EMEA,
             OCEANIA,
+        }
+        public enum Region2
+        {
+        
             Global
         }
 
@@ -34,9 +38,13 @@ namespace NOCAPI.Modules.Zdx.NewFiles
 
         private static readonly IReadOnlyDictionary<Region, int> PropertyIds_SphereMobile = new Dictionary<Region, int>
             {
-              { Region.Global, 487647347 },
+              { Region.NA, 487647347 },
             };
 
+        private static readonly IReadOnlyDictionary<Region2, int> PropertyIds_GEMS = new Dictionary<Region2, int>
+            {
+              { Region2.Global, 257449611 },
+            };
 
         public GAHelper(IHttpClientFactory httpClientFactory)
         {
@@ -145,6 +153,50 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             var client = CreateAuthClient(token);
 
             if (!PropertyIds_SphereMobile.TryGetValue(region, out var propertyId))
+                throw new ArgumentException($"Unknown region: {region}", nameof(region));
+
+            var url = $"https://analyticsdata.googleapis.com/v1beta/properties/{propertyId}:runRealtimeReport";
+
+
+            var requestBody = new
+            {
+                dimensions = new[] { new { name = "unifiedScreenName" } }, // page title & screen name (unified)
+                metrics = new[]
+                    {
+            new { name = "activeUsers" },
+            new { name = "screenPageViews" } // keep this only if your property accepts it in Realtime
+        },
+                orderBys = new[]
+                    {
+            new { metric = new { metricName = "activeUsers" }, desc = true }
+        },
+                limit
+            };
+
+
+            using var jsonContent = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+
+            var response = await client.PostAsync(url, jsonContent);
+            //response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync();
+
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // Log or return the full GA error; it includes a helpful message and reason.
+                throw new HttpRequestException(
+                    $"GA Realtime API returned {(int)response.StatusCode} {response.ReasonPhrase}. Body: {json}");
+            }
+
+            return json;
+        }
+
+        public async Task<string> GetGEMMetricsAsync(string token, Region2 region, int limit = 10)
+        {
+            var client = CreateAuthClient(token);
+
+            if (!PropertyIds_GEMS.TryGetValue(region, out var propertyId))
                 throw new ArgumentException($"Unknown region: {region}", nameof(region));
 
             var url = $"https://analyticsdata.googleapis.com/v1beta/properties/{propertyId}:runRealtimeReport";
