@@ -325,6 +325,8 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Collections.Concurrent;
+
 
 namespace NOCAPI.Modules.Zdx.NewFiles
 {
@@ -341,8 +343,8 @@ namespace NOCAPI.Modules.Zdx.NewFiles
 
         private static readonly object _cacheLock = new();
 
-        private static readonly Dictionary<string, int> _previousTotals = new();
-
+        private static readonly ConcurrentDictionary<string, int> _previousTotals =
+            new(StringComparer.OrdinalIgnoreCase);
 
         // -------------------- PROMETHEUS METRICS --------------------
 
@@ -451,11 +453,21 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             return _previousTotals.TryGetValue(key, out var value) ? value : 0;
         }
 
-        private void SetPreviousTotal(string region, string source, int total)
+        private static string BuildKey(string region, string source)
         {
-            var key = $"{region}|{source}";
-            _previousTotals[key] = total;
+            return $"{region.Trim().ToUpperInvariant()}|{source}";
         }
+
+        private static bool TryGetPreviousTotal(string region, string source, out int value)
+        {
+            return _previousTotals.TryGetValue(BuildKey(region, source), out value);
+        }
+
+        private static void SetPreviousTotal(string region, string source, int total)
+        {
+            _previousTotals[BuildKey(region, source)] = total;
+        }
+
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -547,41 +559,65 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     var modelIo = JsonSerializer.Deserialize<GADto>(jsonIo);
 
                     var rows = modelIo?.Rows;
-                    if (rows != null)
+                    if (rows == null || rows.Count == 0)
+                        return;
+
+                    var totalActiveIO = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
+
+                    _logger.LogInformation(
+                        "IO TOTAL region={Region} total={Total}",
+                        regionLabel, totalActiveIO);
+
+                    // Try get previous value
+                    if (TryGetPreviousTotal(regionLabel, "IO", out var previousTotalIO))
                     {
-
-                        var totalActiveIO = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
-
-                        Console.Write($"Total ACtive IO SUM IS {totalActiveIO}");
-
-                        var previousTotalIO = GetPreviousTotal(regionLabel, "IO");
-
-                        Console.Write($"PREVIOUS TTOALS FOR IO SUM IS {previousTotalIO}");
-
-
-                        double percentageChangeIO = previousTotalIO == 0
-                            ? 0
-                            : Math.Abs((totalActiveIO - previousTotalIO) / (double)previousTotalIO) * 100;
-
-                        GaActiveUsersPercentageChange.WithLabels(regionLabel, "IO").Set(percentageChangeIO);
-                        SetPreviousTotal(regionLabel, "IO", totalActiveIO);
-
-
-                        foreach (var row in rows)
+                        if (previousTotalIO > 0)
                         {
-                            var screen = row.DimensionValues[0].Value;
-                            var active = int.Parse(row.MetricValues[0].Value);
-                            var views = int.Parse(row.MetricValues[1].Value);
+                            var percentageChangeIO =
+                                Math.Abs((totalActiveIO - previousTotalIO) /
+                                         (double)previousTotalIO) * 100;
 
-                            GaIssuerOnlineActiveUsers.WithLabels(regionLabel, screen).Set(active);
-                            GaIssuerOnlinePageViews.WithLabels(regionLabel, screen).Set(views);
+                            GaActiveUsersPercentageChange
+                                .WithLabels(regionLabel, "IO")
+                                .Set(percentageChangeIO);
+
+                            _logger.LogInformation(
+                                "IO % CHANGE region={Region} prev={Prev} curr={Curr} pct={Pct}",
+                                regionLabel, previousTotalIO, totalActiveIO, percentageChangeIO);
                         }
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "IO FIRST RUN region={Region} total={Total}",
+                            regionLabel, totalActiveIO);
+                    }
+
+                    // IMPORTANT: update AFTER calculation
+                    SetPreviousTotal(regionLabel, "IO", totalActiveIO);
+
+                    foreach (var row in rows)
+                    {
+                        var screen = row.DimensionValues[0].Value;
+                        var active = int.Parse(row.MetricValues[0].Value);
+                        var views = int.Parse(row.MetricValues[1].Value);
+
+                        GaIssuerOnlineActiveUsers
+                            .WithLabels(regionLabel, screen)
+                            .Set(active);
+
+                        GaIssuerOnlinePageViews
+                            .WithLabels(regionLabel, screen)
+                            .Set(views);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "IssuerOnline request failed for region {Region}", region);
+                    _logger.LogError(ex,
+                        "IssuerOnline request failed for region {Region}",
+                        regionLabel);
                 }
+
             }
 
 
