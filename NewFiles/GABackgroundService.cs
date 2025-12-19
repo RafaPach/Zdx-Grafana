@@ -341,6 +341,9 @@ namespace NOCAPI.Modules.Zdx.NewFiles
 
         private static readonly object _cacheLock = new();
 
+        private static readonly Dictionary<string, int> _previousTotals = new();
+
+
         // -------------------- PROMETHEUS METRICS --------------------
 
         private static readonly Gauge GaInvestorCentreActiveUsers =
@@ -418,6 +421,24 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 "Daily snapshot pageviews",
                 new GaugeConfiguration { LabelNames = new[] { "region", "screen", "date" } });
 
+        private static readonly Gauge GaActiveUsersPercentageChange =
+        Metrics.CreateGauge(
+            "ga_active_users_percentage_change",
+            "Percentage change of active users by region",
+            new GaugeConfiguration
+            {
+                LabelNames = new[] { "region", "source" } // IC / IO / GEMS
+            });
+
+        private static readonly Gauge GaActiveUsersPercentageChange =
+    Metrics.CreateGauge(
+        "ga_active_users_percentage_change",
+        "Percentage change of active users by region and source",
+        new GaugeConfiguration
+        {
+            LabelNames = new[] { "region", "source" } // source = IC / IO / GEMS
+        });
+
         // --------------------------------------------------
 
         public GABackgroundService(
@@ -432,6 +453,18 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             _tokenService = tokenService;
             _gaTokenService = gaTokenService;
             _gaSnapshots = gaSnapshots;
+        }
+
+        private int GetPreviousTotal(string region, string source)
+        {
+            var key = $"{region}|{source}";
+            return _previousTotals.TryGetValue(key, out var value) ? value : 0;
+        }
+
+        private void SetPreviousTotal(string region, string source, int total)
+        {
+            var key = $"{region}|{source}";
+            _previousTotals[key] = total;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -487,6 +520,20 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     var rows = modelIc?.Rows;
                     if (rows != null)
                     {
+
+                        // Compute totals once per region
+                        var totalActiveIC = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
+                        var previousTotalIC = GetPreviousTotal(regionLabel, "IC");
+
+                        double percentageChangeIC = previousTotalIC == 0
+                            ? 0
+                            : Math.Abs((totalActiveIC - previousTotalIC) / (double)previousTotalIC) * 100;
+
+                        // Set percentage metric once per region
+                        GaActiveUsersPercentageChange.WithLabels(regionLabel, "IC").Set(percentageChangeIC);
+                        SetPreviousTotal(regionLabel, "IC", totalActiveIC);
+
+
                         foreach (var row in rows)
                         {
                             var screen = row.DimensionValues[0].Value;
@@ -512,6 +559,18 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     var rows = modelIo?.Rows;
                     if (rows != null)
                     {
+
+                        var totalActiveIO = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
+                        var previousTotalIO = GetPreviousTotal(regionLabel, "IO");
+
+                        double percentageChangeIO = previousTotalIO == 0
+                            ? 0
+                            : Math.Abs((totalActiveIO - previousTotalIO) / (double)previousTotalIO) * 100;
+
+                        GaActiveUsersPercentageChange.WithLabels(regionLabel, "IO").Set(percentageChangeIO);
+                        SetPreviousTotal(regionLabel, "IO", totalActiveIO);
+
+
                         foreach (var row in rows)
                         {
                             var screen = row.DimensionValues[0].Value;
