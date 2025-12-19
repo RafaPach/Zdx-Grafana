@@ -13,9 +13,9 @@ namespace NOCAPI.Modules.Zdx
     [Route("api/zdx")]
     public class ZdxController : ControllerBase
     {
-        private readonly PocHelper _pocMethods;
+        //private readonly PocHelper _pocMethods;
         private readonly ILogger<ZdxController> _logger;
-        private readonly TokenService _tokenService;
+        //private readonly TokenService _tokenService;
         private readonly RateLimiter _rateLimiter;
         private readonly GAHelper _gaHelper;
         private readonly GATokenService _gaTokenService;
@@ -86,9 +86,9 @@ namespace NOCAPI.Modules.Zdx
 
             ZdxServiceInitializer.Initialize();
 
-            _pocMethods = ZdxServiceInitializer.ServiceProvider.GetRequiredService<PocHelper>();
+            //_pocMethods = ZdxServiceInitializer.ServiceProvider.GetRequiredService<PocHelper>();
             _rateLimiter = ZdxServiceInitializer.ServiceProvider.GetRequiredService<RateLimiter>();
-            _tokenService = ZdxServiceInitializer.ServiceProvider.GetRequiredService<TokenService>();
+            //_tokenService = ZdxServiceInitializer.ServiceProvider.GetRequiredService<TokenService>();
             _gaHelper = ZdxServiceInitializer.ServiceProvider.GetRequiredService<GAHelper>();
             _gaTokenService = ZdxServiceInitializer.ServiceProvider.GetRequiredService<GATokenService>();
         }

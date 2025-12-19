@@ -332,7 +332,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
     {
         private readonly ILogger _logger;
         private readonly GAHelper _gaHelper;
-        private readonly TokenService _tokenService;
+        //private readonly TokenService _tokenService;
         private readonly GATokenService _gaTokenService;
         private readonly GASnapshots _gaSnapshots;
 
@@ -422,15 +422,6 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 new GaugeConfiguration { LabelNames = new[] { "region", "screen", "date" } });
 
         private static readonly Gauge GaActiveUsersPercentageChange =
-        Metrics.CreateGauge(
-            "ga_active_users_percentage_change",
-            "Percentage change of active users by region",
-            new GaugeConfiguration
-            {
-                LabelNames = new[] { "region", "source" } // IC / IO / GEMS
-            });
-
-        private static readonly Gauge GaActiveUsersPercentageChange =
     Metrics.CreateGauge(
         "ga_active_users_percentage_change",
         "Percentage change of active users by region and source",
@@ -444,13 +435,12 @@ namespace NOCAPI.Modules.Zdx.NewFiles
         public GABackgroundService(
             ILogger<GABackgroundService> logger,
             GAHelper gaHelper,
-            TokenService tokenService,
             GATokenService gaTokenService,
             GASnapshots gaSnapshots)
         {
             _logger = logger;
             _gaHelper = gaHelper;
-            _tokenService = tokenService;
+            //_tokenService = tokenService;
             _gaTokenService = gaTokenService;
             _gaSnapshots = gaSnapshots;
         }
@@ -561,7 +551,13 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     {
 
                         var totalActiveIO = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
+
+                        Console.Write($"Total ACtive IO SUM IS {totalActiveIO}");
+
                         var previousTotalIO = GetPreviousTotal(regionLabel, "IO");
+
+                        Console.Write($"PREVIOUS TTOALS FOR IO SUM IS {previousTotalIO}");
+
 
                         double percentageChangeIO = previousTotalIO == 0
                             ? 0

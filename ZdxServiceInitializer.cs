@@ -33,14 +33,14 @@ namespace NOCAPI.Modules.Zdx
 
                 // Core services
                 services.AddMemoryCache();
-                services.AddScoped<PocHelper>();
-                services.AddSingleton<TokenService>();
+                //services.AddScoped<PocHelper>();
+                //services.AddSingleton<TokenService>();
                 services.AddSingleton<RateLimiter>();
                 services.AddScoped<GAHelper>();
                 services.AddSingleton<GATokenService>();
                 services.AddSingleton<GASnapshots>();
 
-                services.AddHostedService<ZdxBackgroundService>();
+                //services.AddHostedService<ZdxBackgroundService>();
                 services.AddHostedService<GABackgroundService>();
 
 
