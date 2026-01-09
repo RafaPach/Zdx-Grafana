@@ -491,6 +491,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
         private async Task RefreshGaMetricsAsync(CancellationToken token)
         {
             _logger.LogInformation("Refreshing GA metrics...");
+
             var accessToken = await _gaTokenService.GetAccessTokenAsync();
 
             // ---------------- RESET PROMETHEUS GAUGES ----------------
@@ -553,69 +554,86 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 }
 
                 // ----- IssuerOnline -----
-                try
+
+
+                if (region != GAHelper.Region.NA)
                 {
-                    var jsonIo = await _gaHelper.GetIssuerOnlineMetricsAsync(accessToken, region, 15);
-                    var modelIo = JsonSerializer.Deserialize<GADto>(jsonIo);
-
-                    var rows = modelIo?.Rows;
-                    if (rows == null || rows.Count == 0)
-                        return;
-
-                    var totalActiveIO = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
-
-                    _logger.LogInformation(
-                        "IO TOTAL region={Region} total={Total}",
-                        regionLabel, totalActiveIO);
-
-                    // Try get previous value
-                    if (TryGetPreviousTotal(regionLabel, "IO", out var previousTotalIO))
+                    _logger.LogDebug("IssuerOnline skipped for {Region}", regionLabel);
+                }
+                else
+                {
+                    try
                     {
-                        if (previousTotalIO > 0)
+                        var jsonIo = await _gaHelper.GetIssuerOnlineMetricsAsync(accessToken, region, 15);
+                        var modelIo = JsonSerializer.Deserialize<GADto>(jsonIo);
+
+                        var rows = modelIo?.Rows;
+                        //if (rows == null || rows.Count == 0)
+                        //    return;
+
+
+                        if (rows == null || rows.Count == 0)
                         {
-                            var percentageChangeIO =
-                                Math.Abs((totalActiveIO - previousTotalIO) /
-                                         (double)previousTotalIO) * 100;
+                            _logger.LogInformation("IssuerOnline GA returned no rows for {Region}", regionLabel);
+                            continue; // don't stop; move to next region
+                        }
 
-                            GaActiveUsersPercentageChange
-                                .WithLabels(regionLabel, "IO")
-                                .Set(percentageChangeIO);
 
+                        var totalActiveIO = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
+
+                        _logger.LogInformation(
+                            "IO TOTAL region={Region} total={Total}",
+                            regionLabel, totalActiveIO);
+
+                        // Try get previous value
+                        if (TryGetPreviousTotal(regionLabel, "IO", out var previousTotalIO))
+                        {
+                            if (previousTotalIO > 0)
+                            {
+                                var percentageChangeIO =
+                                    Math.Abs((totalActiveIO - previousTotalIO) /
+                                             (double)previousTotalIO) * 100;
+
+                                GaActiveUsersPercentageChange
+                                    .WithLabels(regionLabel, "IO")
+                                    .Set(percentageChangeIO);
+
+                                _logger.LogInformation(
+                                    "IO % CHANGE region={Region} prev={Prev} curr={Curr} pct={Pct}",
+                                    regionLabel, previousTotalIO, totalActiveIO, percentageChangeIO);
+                            }
+                        }
+                        else
+                        {
                             _logger.LogInformation(
-                                "IO % CHANGE region={Region} prev={Prev} curr={Curr} pct={Pct}",
-                                regionLabel, previousTotalIO, totalActiveIO, percentageChangeIO);
+                                "IO FIRST RUN region={Region} total={Total}",
+                                regionLabel, totalActiveIO);
+                        }
+
+                        // IMPORTANT: update AFTER calculation
+                        SetPreviousTotal(regionLabel, "IO", totalActiveIO);
+
+                        foreach (var row in rows)
+                        {
+                            var screen = row.DimensionValues[0].Value;
+                            var active = int.Parse(row.MetricValues[0].Value);
+                            var views = int.Parse(row.MetricValues[1].Value);
+
+                            GaIssuerOnlineActiveUsers
+                                .WithLabels(regionLabel, screen)
+                                .Set(active);
+
+                            GaIssuerOnlinePageViews
+                                .WithLabels(regionLabel, screen)
+                                .Set(views);
                         }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        _logger.LogInformation(
-                            "IO FIRST RUN region={Region} total={Total}",
-                            regionLabel, totalActiveIO);
+                        _logger.LogError(ex,
+                            "IssuerOnline request failed for region {Region}",
+                            regionLabel);
                     }
-
-                    // IMPORTANT: update AFTER calculation
-                    SetPreviousTotal(regionLabel, "IO", totalActiveIO);
-
-                    foreach (var row in rows)
-                    {
-                        var screen = row.DimensionValues[0].Value;
-                        var active = int.Parse(row.MetricValues[0].Value);
-                        var views = int.Parse(row.MetricValues[1].Value);
-
-                        GaIssuerOnlineActiveUsers
-                            .WithLabels(regionLabel, screen)
-                            .Set(active);
-
-                        GaIssuerOnlinePageViews
-                            .WithLabels(regionLabel, screen)
-                            .Set(views);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "IssuerOnline request failed for region {Region}",
-                        regionLabel);
                 }
 
             }
@@ -714,6 +732,52 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 GAHelper.Region.NA,
             };
 
+            //foreach (var region in snapshotRegionsIO)
+            //{
+            //    var regionLabel = region.ToString().ToUpperInvariant();
+
+            //    foreach (var date in dates)
+            //    {
+            //        try
+            //        {
+
+            //            var jsonSnapshot = await _gaSnapshots.GetIssuerOnlineSnapshotMetricsAsync(accessToken, region, date, 10);
+            //            var modelSnapshot = JsonSerializer.Deserialize<GADto>(jsonSnapshot);
+
+            //            var rows = modelSnapshot?.Rows;
+            //            if (rows != null)
+            //            {
+            //                foreach (var row in rows)
+            //                {
+            //                    var screen = row.DimensionValues[0].Value;
+            //                    var active = int.Parse(row.MetricValues[0].Value);
+            //                    var views = int.Parse(row.MetricValues[1].Value);
+
+            //                    //GaInvestorCentreDailyActiveUsers.WithLabels(regionLabel, screen).Set(active);
+            //                    //GaInvestorCentreDailyPageViews.WithLabels(regionLabel, screen).Set(views);
+
+            //                    var totalActive = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
+            //                    var totalPageView = rows.Sum(r => int.Parse(r.MetricValues[1].Value));
+
+
+            //                    GaIODailyActiveUsers.WithLabels(regionLabel, screen, date).Set(totalActive);
+            //                    GaIODailyPageViews.WithLabels(regionLabel, screen, date).Set(totalPageView);
+
+            //                    //_logger.LogInformation(
+            //                    //    "Snapshot IC row: region={Region}, screen={Screen}, active={Active}, views={Views}",
+            //                    //    regionLabel, screen, active, views);
+            //                }
+            //            }
+            //        }
+            //        catch (Exception ex)
+            //        {
+            //            _logger.LogWarning(ex, "Snapshot IC failed for region {Region}", region);
+            //        }
+            //    }
+            //}
+
+
+
             foreach (var region in snapshotRegionsIO)
             {
                 var regionLabel = region.ToString().ToUpperInvariant();
@@ -722,48 +786,98 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                 {
                     try
                     {
-
                         var jsonSnapshot = await _gaSnapshots.GetIssuerOnlineSnapshotMetricsAsync(accessToken, region, date, 10);
                         var modelSnapshot = JsonSerializer.Deserialize<GADto>(jsonSnapshot);
 
                         var rows = modelSnapshot?.Rows;
-                        if (rows != null)
+
+                        if (rows.Any())
                         {
-                            foreach (var row in rows)
+                            // Group by screen to emit per-screen totals
+                            foreach (var grp in rows.GroupBy(r => r.DimensionValues[0].Value))
                             {
-                                var screen = row.DimensionValues[0].Value;
-                                var active = int.Parse(row.MetricValues[0].Value);
-                                var views = int.Parse(row.MetricValues[1].Value);
-
-                                //GaInvestorCentreDailyActiveUsers.WithLabels(regionLabel, screen).Set(active);
-                                //GaInvestorCentreDailyPageViews.WithLabels(regionLabel, screen).Set(views);
-
-                                var totalActive = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
-                                var totalPageView = rows.Sum(r => int.Parse(r.MetricValues[1].Value));
-
+                                var screen = grp.Key;
+                                var totalActive = grp.Sum(r => int.Parse(r.MetricValues[0].Value));
+                                var totalPageView = grp.Sum(r => int.Parse(r.MetricValues[1].Value));
 
                                 GaIODailyActiveUsers.WithLabels(regionLabel, screen, date).Set(totalActive);
                                 GaIODailyPageViews.WithLabels(regionLabel, screen, date).Set(totalPageView);
 
-                                _logger.LogInformation(
-                                    "Snapshot IC row: region={Region}, screen={Screen}, active={Active}, views={Views}",
-                                    regionLabel, screen, active, views);
+                                _logger.LogInformation("IO totals: region={Region}, date={Date}, screen={Screen}, active={Active}, views={Views}",
+                                    regionLabel, date, screen, totalActive, totalPageView);
                             }
+                        }
+                        else
+                        {
+                            // No rows: explicitly set 0 to avoid stale gauges.
+                            // If you know the screen(s) you care about, set them here.
+                            var screen = "Sphere"; // or iterate known screens if you have a list
+                            GaIODailyActiveUsers.WithLabels(regionLabel, screen, date).Set(0);
+                            GaIODailyPageViews.WithLabels(regionLabel, screen, date).Set(0);
+
+                            _logger.LogInformation("IO totals: region={Region}, date={Date}, screen={Screen}, active=0, views=0 (no rows)",
+                                regionLabel, date, screen);
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Snapshot IC failed for region {Region}", region);
+                        _logger.LogWarning(ex, "Snapshot IO failed for region {Region} on date {Date}", regionLabel, date);
                     }
                 }
             }
 
+
+
+
+
             var GEMSRegions = new[] {
                 GAHelper.Region2.Global,
             };
- 
+
 
             //var dates = new[] { "yesterday", "today" };
+
+            //foreach (var region in GEMSRegions)
+            //{
+            //    var regionLabel = region.ToString().ToUpperInvariant();
+
+            //    foreach (var date in dates)
+            //    {
+
+            //        try
+            //        {
+
+            //            var json = await _gaHelper.GetGEMMetricsAsync(accessToken, region, 10);
+            //            var jsonSnapShot = await _gaSnapshots.GetGEMSnapshotMetricsAsync(accessToken, region, date, 10);
+            //            var modelSnapshot = JsonSerializer.Deserialize<GADto>(json);
+
+            //            var rows = modelSnapshot?.Rows;
+            //            if (rows != null)
+            //            {
+            //                foreach (var row in rows)
+            //                {
+            //                    var screen = row.DimensionValues[0].Value;
+            //                    var active = int.Parse(row.MetricValues[0].Value);
+            //                    var views = int.Parse(row.MetricValues[1].Value);
+
+            //                    var totalActive = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
+            //                    var totalPageView = rows.Sum(r => int.Parse(r.MetricValues[1].Value));
+
+            //                    GaGEMnlineActiveUsers.WithLabels(regionLabel, screen).Set(active);
+            //                    GaGEMOnlinePageViews.WithLabels(regionLabel, screen).Set(views);
+
+            //                    GaGEMDailyActiveUsers.WithLabels(regionLabel, screen, date).Set(totalActive);
+            //                    GaGEMDailyPageViews.WithLabels(regionLabel, screen, date).Set(totalPageView);
+
+            //                }
+            //            }
+            //        }
+            //        catch (Exception ex)
+            //        {
+            //            _logger.LogWarning(ex, "Snapshot IC failed for region {Region}", region);
+            //        }
+            //    }
+            //}
 
             foreach (var region in GEMSRegions)
             {
@@ -771,41 +885,85 @@ namespace NOCAPI.Modules.Zdx.NewFiles
 
                 foreach (var date in dates)
                 {
-
                     try
                     {
+                        // ============================
+                        // REALTIME (no date label)
+                        // ============================
+                        var jsonRealtime = await _gaHelper.GetGEMMetricsAsync(accessToken, region, 10);
+                        var realtimeModel = JsonSerializer.Deserialize<GADto>(jsonRealtime);
 
-                        var json = await _gaHelper.GetGEMMetricsAsync(accessToken, region, 10);
-                        var jsonSnapShot = await _gaSnapshots.GetGEMSnapshotMetricsAsync(accessToken, region, date, 10);
-                        var modelSnapshot = JsonSerializer.Deserialize<GADto>(json);
-
-                        var rows = modelSnapshot?.Rows;
-                        if (rows != null)
+                        var realtimeRows = realtimeModel?.Rows;
+                        if (realtimeRows?.Any() == true)
                         {
-                            foreach (var row in rows)
+                            foreach (var row in realtimeRows)
                             {
                                 var screen = row.DimensionValues[0].Value;
                                 var active = int.Parse(row.MetricValues[0].Value);
                                 var views = int.Parse(row.MetricValues[1].Value);
 
-                                var totalActive = rows.Sum(r => int.Parse(r.MetricValues[0].Value));
-                                var totalPageView = rows.Sum(r => int.Parse(r.MetricValues[1].Value));
+                                GaGEMnlineActiveUsers
+                                    .WithLabels(regionLabel, screen)
+                                    .Set(active);
 
-                                GaGEMnlineActiveUsers.WithLabels(regionLabel, screen).Set(active);
-                                GaGEMOnlinePageViews.WithLabels(regionLabel, screen).Set(views);
-
-                                GaGEMDailyActiveUsers.WithLabels(regionLabel, screen, date).Set(totalActive);
-                                GaGEMDailyPageViews.WithLabels(regionLabel, screen, date).Set(totalPageView);
-
+                                GaGEMOnlinePageViews
+                                    .WithLabels(regionLabel, screen)
+                                    .Set(views);
                             }
+                        }
+
+                        // ============================
+                        // SNAPSHOT (daily, date-based)
+                        // ============================
+                        var jsonSnapshot =
+                            await _gaSnapshots.GetGEMSnapshotMetricsAsync(accessToken, region, date, 10);
+
+                        var snapshotModel = JsonSerializer.Deserialize<GADto>(jsonSnapshot);
+                        var snapshotRows = snapshotModel?.Rows;
+
+                        if (snapshotRows?.Any() == true)
+                        {
+                            // Group by screen to emit per-screen totals (same as IO)
+                            foreach (var grp in snapshotRows.GroupBy(r => r.DimensionValues[0].Value))
+                            {
+                                var screen = grp.Key;
+                                var totalActive = grp.Sum(r => int.Parse(r.MetricValues[0].Value));
+                                var totalViews = grp.Sum(r => int.Parse(r.MetricValues[1].Value));
+
+                                GaGEMDailyActiveUsers
+                                    .WithLabels(regionLabel, screen, date)
+                                    .Set(totalActive);
+
+                                GaGEMDailyPageViews
+                                    .WithLabels(regionLabel, screen, date)
+                                    .Set(totalViews);
+
+                                _logger.LogInformation(
+                                    "GEM snapshot: region={Region}, date={Date}, screen={Screen}, active={Active}, views={Views}",
+                                    regionLabel, date, screen, totalActive, totalViews);
+                            }
+                        }
+                        else
+                        {
+                            // Avoid stale gauges
+                            var screen = "Sphere"; // or iterate known screens
+                            GaGEMDailyActiveUsers.WithLabels(regionLabel, screen, date).Set(0);
+                            GaGEMDailyPageViews.WithLabels(regionLabel, screen, date).Set(0);
+
+                            _logger.LogInformation(
+                                "GEM snapshot: region={Region}, date={Date}, screen={Screen}, active=0, views=0 (no rows)",
+                                regionLabel, date, screen);
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Snapshot IC failed for region {Region}", region);
+                        _logger.LogWarning(ex,
+                            "Snapshot GEM failed for region {Region} on date {Date}",
+                            regionLabel, date);
                     }
                 }
             }
+
 
             // ---------------- EXPORT METRICS ----------------
 

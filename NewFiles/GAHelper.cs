@@ -20,7 +20,6 @@ namespace NOCAPI.Modules.Zdx.NewFiles
         }
         public enum Region2
         {
-        
             Global
         }
 
