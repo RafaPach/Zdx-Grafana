@@ -23,4 +23,5 @@ namespace NOCAPI.Modules.Zdx
         public static string Get() => _metrics;
 
     }
+
 }

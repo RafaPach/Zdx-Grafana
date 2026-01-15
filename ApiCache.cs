@@ -20,6 +20,7 @@ namespace NOCAPI.Modules.Zdx
 
         public async Task<T> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan? duration = null)
         {
+
             var cacheDuration = duration ?? _defaultCacheDuration;
 
             if (_cache.TryGetValue(key, out var cached))
@@ -35,4 +36,4 @@ namespace NOCAPI.Modules.Zdx
             return value;
         }
     }
-    }
+ }

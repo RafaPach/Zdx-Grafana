@@ -318,14 +318,15 @@ using Microsoft.Extensions.Logging;
 using NOCAPI.Modules.Zdx.DTOs;
 using Prometheus;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using System.Collections.Concurrent;
 
 
 namespace NOCAPI.Modules.Zdx.NewFiles
@@ -432,6 +433,10 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             LabelNames = new[] { "region", "source" } // source = IC / IO / GEMS
         });
 
+        private static readonly Gauge GaHtmlTable =
+    Metrics.CreateGauge("ga_html_table", "HTML table of GA metrics",
+        new GaugeConfiguration { LabelNames = new[] { "html" } });
+
         // --------------------------------------------------
 
         public GABackgroundService(
@@ -467,6 +472,54 @@ namespace NOCAPI.Modules.Zdx.NewFiles
         {
             _previousTotals[BuildKey(region, source)] = total;
         }
+
+        public class GARow
+        {
+            public string Region { get; set; }
+            public string Screen { get; set; }
+            public int ActiveUsers { get; set; }
+            public int PageViews { get; set; }
+        }
+
+
+        public static void UpdateHtmlTable(List<GARow> rows)
+        {
+            // Filter rows where ActiveUsers > 5
+            var filteredRows = rows.Where(r => r.ActiveUsers > 5).ToList();
+            if (!filteredRows.Any())
+            {
+                filteredRows.Add(new GARow { Region = "-", Screen = "-", ActiveUsers = 0, PageViews = 0 });
+            }
+
+            var html = new StringBuilder();
+
+            html.Append("<table style='width:100%; border-collapse:collapse; font-family:Arial; color:white; background: radial-gradient(1200px circle at -10% 50%, rgba(0,0,0,0.35), rgba(0,0,0,0) 35%), linear-gradient(90deg, #432063 0%, #93186c 50%, #b922f3 100%);'>");
+            html.Append("<thead>");
+            html.Append("<tr>");
+            html.Append("<th style='padding:5px; border-bottom:1px solid #fff;'>Region</th>");
+            html.Append("<th style='padding:5px; border-bottom:1px solid #fff;'>Screen</th>");
+            html.Append("<th style='padding:5px; border-bottom:1px solid #fff;'>Active Users</th>");
+            html.Append("<th style='padding:5px; border-bottom:1px solid #fff;'>Page Views</th>");
+            html.Append("</tr>");
+            html.Append("</thead>");
+            html.Append("<tbody>");
+
+            foreach (var row in filteredRows)
+            {
+                html.Append("<tr>");
+                html.Append($"<td style='padding:5px'>{row.Region}</td>");
+                html.Append($"<td style='padding:5px'>{row.Screen}</td>");
+                html.Append($"<td style='padding:5px'>{row.ActiveUsers}</td>");
+                html.Append($"<td style='padding:5px'>{row.PageViews}</td>");
+                html.Append("</tr>");
+            }
+
+            html.Append("</tbody></table>");
+
+            // Set Prometheus gauge label
+            GaHtmlTable.WithLabels(html.ToString()).Set(1);
+        }
+
 
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -508,6 +561,8 @@ namespace NOCAPI.Modules.Zdx.NewFiles
             GaInvestorCentreDailyActiveUsers.Unpublish();
             GaInvestorCentreDailyPageViews.Unpublish();
 
+            var allRows = new List<GARow>();
+
             foreach (GAHelper.Region region in Enum.GetValues(typeof(GAHelper.Region)))
             {
                 var regionLabel = region.ToString().ToUpperInvariant();
@@ -545,6 +600,14 @@ namespace NOCAPI.Modules.Zdx.NewFiles
 
                             GaInvestorCentreActiveUsers.WithLabels(regionLabel, screen).Set(active);
                             GaInvestorCentrePageViews.WithLabels(regionLabel, screen).Set(views);
+
+                            allRows.Add(new GARow
+                            {
+                                Region = regionLabel,
+                                Screen = screen,
+                                ActiveUsers = active,
+                                PageViews = views
+                            });
                         }
                     }
                 }
@@ -553,6 +616,7 @@ namespace NOCAPI.Modules.Zdx.NewFiles
                     _logger.LogDebug("InvestorCentre not configured for region {Region}", region);
                 }
 
+                UpdateHtmlTable(allRows);
                 // ----- IssuerOnline -----
 
 

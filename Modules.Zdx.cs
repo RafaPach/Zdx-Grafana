@@ -211,31 +211,31 @@ namespace NOCAPI.Modules.Zdx
         //    }
         //}
 
-        [HttpGet("centralisedData")]
+        //[HttpGet("centralisedData")]
 
-        public async Task<IActionResult> GetAllZdxMetrics()
-        {
+        //public async Task<IActionResult> GetAllZdxMetrics()
+        //{
 
-            try
-            {
-                _logger.LogInformation("Endpoint is being hit");
+        //    try
+        //    {
+        //        _logger.LogInformation("Endpoint is being hit");
 
-                var stream = new MemoryStream();
-                await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
-                stream.Position = 0;
+        //        var stream = new MemoryStream();
+        //        await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
+        //        stream.Position = 0;
 
-                using var reader = new StreamReader(stream);
-                var metrics = await reader.ReadToEndAsync();
+        //        using var reader = new StreamReader(stream);
+        //        var metrics = await reader.ReadToEndAsync();
 
-                return Content(metrics, "text/plain; version=0.0.4");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching ZDX metrics.");
-                return StatusCode(500, "Failed to fetch metrics.");
-            }
+        //        return Content(metrics, "text/plain; version=0.0.4");
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error fetching ZDX metrics.");
+        //        return StatusCode(500, "Failed to fetch metrics.");
+        //    }
 
-        }
+        //}
  
         [HttpGet("testData")]
         public async Task<IActionResult> GetTest()

@@ -189,6 +189,7 @@ namespace NOCAPI.Modules.Zdx.Service
                     //var stats = await _pocMethods.GetStatsPerApp(token);
 
                     // Build Prometheus metrics
+
                     ZdxAppScore.Unpublish();
                     ZdxAppAvgPageFetchTimeSeconds.Unpublish();
                     ZdxAppTotalUsers.Unpublish();

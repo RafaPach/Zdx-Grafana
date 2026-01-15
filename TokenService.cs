@@ -64,6 +64,7 @@ namespace NOCAPI.Modules.Zdx
 
                 return tokenResponse.Access_token;
             }
+
             finally
             {
                 _semaphore.Release();
@@ -74,7 +75,7 @@ namespace NOCAPI.Modules.Zdx
         {
             var tokenUrl = PluginConfigWrapper.Get("TokenUrl");
             var clientId = PluginConfigWrapper.Get("ClientId");
-            var clientSecret = PluginConfigWrapper.Get("ClientSecret");
+            var clientSecret = PluginConfigWrapper.GetSecure("ClientSecret");
             var audience = PluginConfigWrapper.Get("Audience");
 
             Console.WriteLine($"Token URL = {tokenUrl}");
